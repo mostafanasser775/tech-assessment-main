@@ -1,0 +1,60 @@
+Technical Assessment | Mid full stack
+
+Role:  Junior full stack
+
+Starter Project:  
+https://github.com/blurrso/tech-assessment
+
+Clone the repository to your GitHub and share the link with us
+
+Tech Stack:
+Frontend: React + Tailwind + Shadcn + Prisma  
+Backend: NextJs server actions (no separate backend service or API needed)  
+Database: SQLite  
+Authentication: NextAuth.js
+
+Objective:  
+Carefully read the following user story and build a production-ready React application that implements the specified functionality.  
+Your task involves creating a robust frontend solution for the Blurr HR Portal, enabling users to efficiently manage their employees and their projects.
+
+General Rules:  
+- You are expected to heavily use AI in the process: CursorAI, windsurfAI, or any other agentic AI tools to help you with the task.  
+- Use AI for everything. You will be judged on your ability to produce the best code with AI—how well you navigate and guide the AI to generate structured, high-quality, production-ready code.  
+- We believe AI is the future, and the skill to harness its power is crucial to success.
+
+Context:  
+At Blurr, we provide systems to help companies automate their workflow and increase their value.  
+We consider ourselves to be success partners for our customers to help them overcome their pain points and eliminate pipeline bottlenecks.
+
+User Story:  
+As a user of the Blurr HR Portal, I want to efficiently manage my employees, calculate their salaries, and track projects and tasks.
+
+Acceptance Criteria:
+
+Users can login/signup to the portal
+
+The portal has two main sections:
+
+**Employees Section:**
+- Users can add and manage employees within their organization.  
+- Each employee has fields for: Employee ID, Name, Joining Date, Basic Salary.  
+- A salary table displays a list of employees and their corresponding salary details.  
+- Users can pick a month to generate the salary table.  
+- Users can add bonuses and deductibles for each employee in the salary table, to be automatically calculated in their payable amount.
+
+**Project Section:**
+- Users can add and manage projects.  
+- Users can add tasks to the projects.  
+- Tasks include: Title, Description, Priority, Assigned To, Status.  
+- Users can assign employees to tasks.  
+- Kanban board to display tasks by their status.  
+- Backlog table to display all the tasks.
+
+**Additional Extra Task:**  
+- Create an AI chatbot the user can ask to get information about their tasks and projects.
+
+Additional Notes and Remarks:
+- Use AI to chat and discuss how to structure the best architecture for this project and how to approach each task.  
+- Plan carefully. Ask AI to detail each task, explore technical implementation options, and adjust as needed.  
+- Save the details of each task as an `.md` file in the AI directory. Keep these in the GitHub repository—we’d like to assess how you think and manage project planning and architecture.  
+- We are interested in seeing how you come up with solutions to problems, how you approach solving them, how you search, and how you divide large, ambiguous tasks into digestible, easy-to-implement technical formats.

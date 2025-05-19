@@ -1,0 +1,136 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String     @id @default(cuid())
+  name          String?
+  email         String?    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  companyName   String?
+  jobTitle      String?
+  notificationSettings String? @default("{\"emailNotifications\":true,\"taskUpdates\":true,\"projectUpdates\":true,\"weeklyReports\":false}")
+  accounts      Account[]
+  sessions      Session[]
+  employees     Employee[]
+  projects      Project[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// HR Portal Models
+
+model Employee {
+  id          String    @id @default(cuid())
+  employeeId  String    @unique // Employee ID (e.g., EMP001)
+  name        String
+  joiningDate DateTime
+  basicSalary Float
+  userId      String    // Owner of this employee record
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  salaries    Salary[]
+  tasks       Task[]    // Tasks assigned to this employee
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Salary {
+  id          String   @id @default(cuid())
+  month       Int      // 1-12 for January-December
+  year        Int      // e.g., 2025
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  basicSalary Float    // Basic salary for the month
+  bonus       Float    @default(0) // Additional bonus amount
+  deduction   Float    @default(0) // Deduction amount
+  netSalary   Float    // Net salary after bonus and deduction
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([employeeId, month, year]) // One salary record per employee per month/year
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  userId      String   // Owner of this project
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum TaskStatus {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+}
+
+model Task {
+  id          String       @id @default(cuid())
+  title       String
+  description String?
+  priority    TaskPriority @default(MEDIUM)
+  status      TaskStatus   @default(BACKLOG)
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  assigneeId  String?      // Optional: task may not be assigned yet
+  assignee    Employee?    @relation(fields: [assigneeId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+}

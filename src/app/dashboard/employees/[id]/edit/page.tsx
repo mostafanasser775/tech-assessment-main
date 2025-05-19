@@ -1,0 +1,223 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { useForm } from "react-hook-form";
+import { z } from "zod";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
+import { CalendarIcon } from "lucide-react";
+import { format } from "date-fns";
+import { cn } from "@/lib/utils";
+import { Calendar } from "@/components/ui/calendar";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import Link from "next/link";
+
+// Form schema
+const formSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  joiningDate: z.date({
+    required_error: "Joining date is required",
+  }),
+  basicSalary: z.coerce.number().min(0, "Salary must be a positive number"),
+});
+
+type FormValues = z.infer<typeof formSchema>;
+
+export default function EditEmployeePage() {
+  const params = useParams<{ id: string}>()
+
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const form = useForm<FormValues>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      name: "",
+      joiningDate: new Date(),
+      basicSalary: 0,
+    },
+  });
+
+  // Fetch employee data
+  useEffect(() => {
+    const fetchEmployee = async () => {
+      try {
+        const response = await fetch(`/api/employees/${params.id}`);
+        
+        if (!response.ok) {
+          throw new Error("Failed to fetch employee");
+        }
+        
+        const data = await response.json();
+        
+        form.reset({
+          name: data.employee.name,
+          joiningDate: new Date(data.employee.joiningDate),
+          basicSalary: data.employee.basicSalary,
+        });
+      } catch (err) {
+        if (err instanceof Error) {
+          setError(err.message);
+        } else {
+          setError("An unexpected error occurred");
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchEmployee();
+  }, [params.id, form]);
+
+  const onSubmit = async (data: FormValues) => {
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/employees/${params.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update employee");
+      }
+
+      router.push(`/dashboard/employees/${params.id}`);
+      router.refresh();
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError("An unexpected error occurred");
+      }
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center p-6 container">
+        <p>Loading employee data...</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mx-auto p-6 max-w-2xl container">
+      <h1 className="mb-6 font-bold text-3xl">Edit Employee</h1>
+      
+      <Card>
+        <CardHeader>
+          <CardTitle>Employee Information</CardTitle>
+          <CardDescription>
+            Update the employee details
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert variant="destructive" className="mb-4">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+              <FormField
+                control={form.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="John Doe" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="joiningDate"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel>Joining Date</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            variant={"outline"}
+                            className={cn(
+                              "w-full pl-3 text-left font-normal",
+                              !field.value && "text-muted-foreground"
+                            )}
+                          >
+                            {field.value ? (
+                              format(field.value, "PPP")
+                            ) : (
+                              <span>Pick a date</span>
+                            )}
+                            <CalendarIcon className="opacity-50 ml-auto w-4 h-4" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="p-0 w-auto" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={field.value}
+                          onSelect={field.onChange}
+                          disabled={(date) =>
+                            date > new Date() || date < new Date("1900-01-01")
+                          }
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <FormField
+                control={form.control}
+                name="basicSalary"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Basic Salary</FormLabel>
+                    <FormControl>
+                      <Input type="number" min="0" step="0.01" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+              
+              <div className="flex justify-end gap-2">
+                <Link href={`/dashboard/employees/${params.id}`}>
+                  <Button type="button" variant="outline">
+                    Cancel
+                  </Button>
+                </Link>
+                <Button type="submit" disabled={isSubmitting}>
+                  {isSubmitting ? "Saving..." : "Save Changes"}
+                </Button>
+              </div>
+            </form>
+          </Form>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
