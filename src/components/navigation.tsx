@@ -4,14 +4,15 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { useSession, signOut } from "next-auth/react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function Navigation() {
   const pathname = usePathname();
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
 
   return (
-    <header className="border-b mx-4">
-      <div className="container flex h-16 items-center justify-between py-4">
+    <header className="mx-4 border-b">
+      <div className="flex justify-between items-center py-4 h-16 container">
         <div className="flex items-center gap-6 md:gap-10">
           <Link
             href="/"
@@ -19,7 +20,7 @@ export function Navigation() {
           >
             Blurr.so | HR Portal
           </Link>
-          <nav className="hidden gap-6 md:flex">
+          <nav className="hidden md:flex gap-6">
             <Link
               href="/"
               className={`text-sm font-medium transition-colors hover:text-primary ${
@@ -39,7 +40,12 @@ export function Navigation() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          {!session && pathname !== "/login" && pathname !== "/register" && (
+          {status === "loading" ? (
+            <div className="flex gap-2">
+              <Skeleton className="w-[80px] h-9" />
+              <Skeleton className="w-[80px] h-9" />
+            </div>
+          ) : !session && pathname !== "/login" && pathname !== "/register" ? (
             <div className="flex gap-2">
               <Button
                 variant="outline"
@@ -51,11 +57,9 @@ export function Navigation() {
                 <Link href="/register">Sign Up</Link>
               </Button>
             </div>
-          )}
-
-          {session?.user && (
-            <div className="flex gap-2 items-center">
-              <span className="text-sm mr-2">{session.user.name || session.user.email}</span>
+          ) : session?.user && (
+            <div className="flex items-center gap-2">
+              <span className="mr-2 text-sm">{session.user.name || session.user.email}</span>
               <Button
                 variant="outline"
                 onClick={() => {
