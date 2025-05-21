@@ -17,7 +17,7 @@ export async function updateProfile(data: {
     }
 
     // Update user profile
-    await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: session.user.id },
       data: {
         name: data.name,
@@ -28,7 +28,16 @@ export async function updateProfile(data: {
     });
 
     revalidatePath("/dashboard/settings");
-    return { success: true };
+    return { 
+      success: true,
+      user: {
+        id: updatedUser.id,
+        name: updatedUser.name,
+        email: updatedUser.email,
+        companyName: updatedUser.companyName,
+        jobTitle: updatedUser.jobTitle,
+      }
+    };
   } catch (error) {
     console.error("Error updating profile:", error);
     return { success: false, error: "Failed to update profile" };

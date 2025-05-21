@@ -1,51 +1,47 @@
-import { auth } from "@/auth";
+"use client";
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { prisma } from "@/lib/prisma";
 import { Users, FolderKanban, Clock, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
+import { useStore } from "@/store/useStore";
+import { useEffect } from "react";
 
-export default async function DashboardPage() {
-  const session = await auth();
+export default function DashboardPage() {
+  const { 
+    employees, 
+    projects, 
+    tasks, 
+    setEmployees, 
+    setProjects, 
+    setTasks,
+    isLoading,
+    setLoading,
+    setError 
+  } = useStore();
 
-  // Fetch all required data
-  const [employees, projects, tasks] = await Promise.all([
-    prisma.employee.findMany({
-      where: { userId: session?.user?.id },
-      include: {
-        _count: {
-          select: { tasks: true }
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const response = await fetch('/api/dashboard');
+        if (!response.ok) {
+          throw new Error('Failed to fetch dashboard data');
         }
+        const data = await response.json();
+        setEmployees(data.employees);
+        setProjects(data.projects);
+        setTasks(data.tasks);
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'An error occurred');
+      } finally {
+        setLoading(false);
       }
-    }),
-    prisma.project.findMany({
-      where: { userId: session?.user?.id },
-      include: {
-        _count: {
-          select: { tasks: true }
-        },
-        tasks: {
-          take: 5,
-          orderBy: { createdAt: 'desc' },
-          include: {
-            assignee: true
-          }
-        }
-      }
-    }),
-    prisma.task.findMany({
-      where: { 
-        project: { userId: session?.user?.id }
-      },
-      include: {
-        assignee: true,
-        project: true
-      },
-      orderBy: { createdAt: 'desc' },
-      take: 5
-    })
-  ]);
+    };
+
+    fetchData();
+  }, [setEmployees, setProjects, setTasks, setLoading, setError]);
 
   // Calculate statistics
   const totalEmployees = employees.length;
@@ -61,6 +57,10 @@ export default async function DashboardPage() {
     review: tasks.filter(t => t.status === 'REVIEW').length,
     done: tasks.filter(t => t.status === 'DONE').length,
   };
+
+  if (isLoading) {
+    return <div>Loading...</div>;
+  }
 
   return (
     <div className="space-y-6 p-6 container">

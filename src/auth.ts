@@ -37,7 +37,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         return {
           id: user.id,
           email: user.email,
-          name: user.name,
+          name: user.name || "",
+          companyName: user.companyName || "",
+          jobTitle: user.jobTitle || "",
         };
       },
     }),
@@ -45,7 +47,20 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
   callbacks: {
     async session({ session, token }) {
       if (token.sub && session.user) {
-        session.user.id = token.sub;
+        // Fetch the latest user data
+        const user = await prisma.user.findUnique({
+          where: { id: token.sub },
+        });
+
+        if (user) {
+          session.user = {
+            id: user.id,
+            email: user.email,
+            name: user.name || "",
+            companyName: user.companyName || "",
+            jobTitle: user.jobTitle || "",
+          };
+        }
       }
       return session;
     },

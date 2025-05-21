@@ -4,13 +4,32 @@ import { useState, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Bot, Send, User, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 interface Message {
   role: "user" | "assistant";
   content: string;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  description: string;
+  tasks: Task[];
+}
+
+interface Task {
+  id: string;
+  title: string;
+  description: string | null;
+  status: string;
+  priority: string;
+  assignee: {
+    name: string;
+  } | null;
 }
 
 export function AIChatbot() {
@@ -23,7 +42,36 @@ export function AIChatbot() {
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch projects and tasks on component mount
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        const [projectsRes, tasksRes] = await Promise.all([
+          fetch("/api/projects"),
+          fetch("/api/tasks"),
+        ]);
+
+        if (!projectsRes.ok || !tasksRes.ok) {
+          throw new Error("Failed to fetch data");
+        }
+
+        const projectsData = await projectsRes.json();
+        const tasksData = await tasksRes.json();
+
+        setProjects(projectsData.projects);
+        setTasks(tasksData.tasks);
+      } catch (error) {
+        console.error("Error fetching data:", error);
+        toast.error("Failed to load project data");
+      }
+    };
+
+    fetchData();
+  }, []);
 
   // Scroll to bottom of messages
   useEffect(() => {
@@ -46,36 +94,56 @@ export function AIChatbot() {
     setIsLoading(true);
     
     try {
-      // Simulate AI response (in a real app, this would call an API)
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-      
-      let response = "I'm sorry, I don't have enough information to answer that question.";
-      
-      // Simple pattern matching for demo purposes
-      const query = input.toLowerCase();
-      
-      if (query.includes("project") && query.includes("list")) {
-        response = "You can view all your projects in the Projects section. Click on 'Projects' in the sidebar to see the list.";
-      } else if (query.includes("add") && query.includes("task")) {
-        response = "To add a new task, go to a specific project and click the 'Add Task' button. You'll need to provide a title, description, priority, and status.";
-      } else if (query.includes("kanban")) {
-        response = "The Kanban board helps you visualize your tasks by status. You can drag tasks between columns to update their status. Access it from any project page.";
-      } else if (query.includes("salary") || query.includes("payroll")) {
-        response = "You can manage employee salaries in the Salary Table. Go to Employees > Salary Table, select a month and year, and add bonuses or deductions as needed.";
-      } else if (query.includes("employee") && query.includes("add")) {
-        response = "To add a new employee, go to the Employees section and click 'Add Employee'. You'll need to provide their ID, name, joining date, and basic salary.";
-      } else if (query.includes("help")) {
-        response = "I can help you with information about managing projects, tasks, employees, and salaries. Just ask me specific questions about these topics!";
+      const response = await fetch("/api/ai-chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: input,
+          projects,
+          tasks,
+        }),
+      });
+
+      let data;
+      const contentType = response.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      } else {
+        throw new Error("Invalid response format from server");
+      }
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to get AI response");
+      }
+
+      if (!data.reply) {
+        throw new Error("No response received from AI");
       }
       
       const assistantMessage: Message = {
         role: "assistant",
-        content: response,
+        content: data.reply,
       };
       
       setMessages((prev) => [...prev, assistantMessage]);
     } catch (error) {
       console.error("Error processing message:", error);
+      
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : "I'm sorry, I encountered an error while processing your request.";
+      
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+            content: "I apologize, but I'm having trouble connecting to my brain right now. Please try again in a moment.",
+        },
+      ]);
+      
+      toast.error("Failed to get AI response. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -86,9 +154,9 @@ export function AIChatbot() {
       {/* Floating chat button */}
       <Button
         onClick={() => setIsOpen(true)}
-        className="fixed bottom-4 right-4 rounded-full h-12 w-12 p-0 shadow-lg"
+        className="right-4 bottom-4 fixed shadow-lg p-0 rounded-full w-12 h-12"
       >
-        <Bot className="h-6 w-6" />
+        <Bot className="w-6 h-6" />
       </Button>
       
       {/* Chat window */}
@@ -99,18 +167,18 @@ export function AIChatbot() {
         )}
       >
         <Card className="shadow-lg border-2">
-          <CardHeader className="p-4 pb-2 flex flex-row justify-between items-center">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Bot className="h-5 w-5" />
+          <CardHeader className="flex flex-row justify-between items-center p-4 pb-2">
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <Bot className="w-5 h-5" />
               HR Assistant
             </CardTitle>
             <Button
               variant="ghost"
               size="icon"
-              className="h-8 w-8"
+              className="w-8 h-8"
               onClick={() => setIsOpen(false)}
             >
-              <X className="h-4 w-4" />
+              <X className="w-4 h-4" />
             </Button>
           </CardHeader>
           <CardContent className="p-4 h-80 overflow-y-auto">
@@ -125,9 +193,9 @@ export function AIChatbot() {
                 >
                   <div className="flex items-start gap-2 max-w-[80%]">
                     {message.role === "assistant" && (
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="w-8 h-8">
                         <AvatarFallback className="bg-primary text-primary-foreground">
-                          <Bot className="h-4 w-4" />
+                          <Bot className="w-4 h-4" />
                         </AvatarFallback>
                       </Avatar>
                     )}
@@ -142,9 +210,9 @@ export function AIChatbot() {
                       {message.content}
                     </div>
                     {message.role === "user" && (
-                      <Avatar className="h-8 w-8">
+                      <Avatar className="w-8 h-8">
                         <AvatarFallback className="bg-muted">
-                          <User className="h-4 w-4" />
+                          <User className="w-4 h-4" />
                         </AvatarFallback>
                       </Avatar>
                     )}
@@ -154,16 +222,16 @@ export function AIChatbot() {
               {isLoading && (
                 <div className="flex justify-start">
                   <div className="flex items-start gap-2 max-w-[80%]">
-                    <Avatar className="h-8 w-8">
+                    <Avatar className="w-8 h-8">
                       <AvatarFallback className="bg-primary text-primary-foreground">
-                        <Bot className="h-4 w-4" />
+                        <Bot className="w-4 h-4" />
                       </AvatarFallback>
                     </Avatar>
-                    <div className="rounded-lg px-3 py-2 text-sm bg-muted">
+                    <div className="bg-muted px-3 py-2 rounded-lg text-sm">
                       <div className="flex gap-1">
-                        <div className="h-2 w-2 rounded-full bg-current animate-bounce" />
-                        <div className="h-2 w-2 rounded-full bg-current animate-bounce delay-75" />
-                        <div className="h-2 w-2 rounded-full bg-current animate-bounce delay-150" />
+                        <div className="bg-current rounded-full w-2 h-2 animate-bounce" />
+                        <div className="bg-current rounded-full w-2 h-2 animate-bounce delay-75" />
+                        <div className="bg-current rounded-full w-2 h-2 animate-bounce delay-150" />
                       </div>
                     </div>
                   </div>
@@ -173,7 +241,7 @@ export function AIChatbot() {
             </div>
           </CardContent>
           <CardFooter className="p-4 pt-2">
-            <form onSubmit={handleSubmit} className="flex w-full gap-2">
+            <form onSubmit={handleSubmit} className="flex gap-2 w-full">
               <Input
                 placeholder="Ask about your projects and tasks..."
                 value={input}
@@ -182,7 +250,7 @@ export function AIChatbot() {
                 className="flex-1"
               />
               <Button type="submit" size="icon" disabled={isLoading}>
-                <Send className="h-4 w-4" />
+                <Send className="w-4 h-4" />
               </Button>
             </form>
           </CardFooter>

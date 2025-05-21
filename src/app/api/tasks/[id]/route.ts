@@ -5,7 +5,7 @@ import { TaskPriority, TaskStatus } from "@prisma/client";
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params:Promise< { id: string }> }
 ) {
   try {
     const session = await auth();
@@ -17,7 +17,7 @@ export async function GET(
       );
     }
     
-    const id = params.id;
+    const {id} = (await params);
     
     const task = await prisma.task.findUnique({
       where: {
@@ -62,7 +62,7 @@ export async function GET(
 
 export async function PATCH(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params:Promise< { id: string }> }
 ) {
   try {
     const session = await auth();
@@ -74,11 +74,11 @@ export async function PATCH(
       );
     }
     
-    const id = params.id;
-    const { title, description, priority, status, assigneeId } = await req.json();
+    const {id} = (await params);
+    const updateData = await req.json();
     
-    // Validate input
-    if (!title) {
+    // Validate input: if title is provided, it must not be empty
+    if (updateData.title !== undefined && !updateData.title) {
       return NextResponse.json(
         { message: "Title is required" },
         { status: 400 }
@@ -114,10 +114,10 @@ export async function PATCH(
     }
     
     // If assigneeId is provided, check if employee exists and belongs to user
-    if (assigneeId) {
+    if (updateData.assigneeId !== undefined) {
       const employee = await prisma.employee.findUnique({
         where: {
-          id: assigneeId,
+          id: updateData.assigneeId,
           userId: session.user.id,
         },
       });
@@ -130,17 +130,17 @@ export async function PATCH(
       }
     }
     
-    // Update task
+    // Update task with only the provided fields
     const updatedTask = await prisma.task.update({
       where: {
         id,
       },
       data: {
-        title,
-        description: description || "",
-        priority: priority as TaskPriority || undefined,
-        status: status as TaskStatus || undefined,
-        assigneeId: assigneeId === null ? null : assigneeId || undefined,
+        title: updateData.title !== undefined ? updateData.title : undefined,
+        description: updateData.description !== undefined ? updateData.description : undefined,
+        priority: updateData.priority !== undefined ? updateData.priority as TaskPriority : undefined,
+        status: updateData.status !== undefined ? updateData.status as TaskStatus : undefined,
+        assigneeId: updateData.assigneeId === null ? null : updateData.assigneeId !== undefined ? updateData.assigneeId : undefined,
       },
       include: {
         assignee: true,
@@ -162,7 +162,7 @@ export async function PATCH(
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } }
+  { params }: { params:Promise< { id: string }> }
 ) {
   try {
     const session = await auth();
@@ -174,7 +174,7 @@ export async function DELETE(
       );
     }
     
-    const id = params.id;
+      const {id} = (await params);
     
     // Check if task exists and belongs to user's project
     const existingTask = await prisma.task.findUnique({

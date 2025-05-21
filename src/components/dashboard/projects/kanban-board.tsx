@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,23 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverlay,
+  DragStartEvent,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDroppable,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 interface Task {
   id: string;
@@ -48,6 +65,7 @@ interface Employee {
 interface KanbanBoardProps {
   tasks: Task[];
   employees: Employee[];
+  projectId: string;
 }
 
 const statusColumns: { status: TaskStatus; label: string }[] = [
@@ -72,7 +90,141 @@ const priorityIcons: Record<TaskPriority, React.ReactNode> = {
   URGENT: <AlertCircle className="w-3 h-3" />,
 };
 
-export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps) {
+interface SortableTaskCardProps {
+  task: Task;
+  onEdit: (task: Task) => void;
+  onDelete: (task: Task) => void;
+}
+
+function SortableTaskCard({ task, onEdit, onDelete }: SortableTaskCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: task.id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+      <Card className="shadow-sm">
+        <CardHeader className="p-3 pb-0">
+          <div className="flex justify-between items-start">
+            <CardTitle className="font-medium text-sm">
+              {task.title}
+            </CardTitle>
+            <Badge className={priorityColors[task.priority]} variant="outline">
+              {priorityIcons[task.priority]}
+              <span className="ml-1">{task.priority}</span>
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="p-3 pt-2">
+          {task.description && (
+            <CardDescription className="mt-1 text-xs line-clamp-2">
+              {task.description}
+            </CardDescription>
+          )}
+        </CardContent>
+        <CardFooter className="flex justify-between items-center p-3 pt-0">
+          {task.assignee ? (
+            <div className="flex items-center gap-2">
+              <Avatar className="w-6 h-6">
+                <AvatarFallback className="text-xs">
+                  {task.assignee.name.substring(0, 2).toUpperCase()}
+                </AvatarFallback>
+              </Avatar>
+              <span className="text-muted-foreground text-xs">
+                {task.assignee.name}
+              </span>
+            </div>
+          ) : (
+            <span className="text-muted-foreground text-xs">Unassigned</span>
+          )}
+          <div className="flex gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-7 h-7"
+              onClick={() => onEdit(task)}
+            >
+              <Edit className="w-3.5 h-3.5" />
+              <span className="sr-only">Edit</span>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="w-7 h-7 text-destructive"
+              onClick={() => onDelete(task)}
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span className="sr-only">Delete</span>
+            </Button>
+          </div>
+        </CardFooter>
+      </Card>
+    </div>
+  );
+}
+
+function KanbanColumn({ status, label, tasks, onEdit, onDelete }: {
+  status: TaskStatus;
+  label: string;
+  tasks: Task[];
+  onEdit: (task: Task) => void;
+  onDelete: (task: Task) => void;
+}) {
+  const { setNodeRef } = useDroppable({
+    id: status,
+    data: {
+      type: 'column',
+      status,
+    },
+  });
+
+  const taskIds = useMemo(() => tasks.map(task => task.id), [tasks]);
+
+  return (
+    <div 
+      ref={setNodeRef}
+      data-status={status}
+      className="flex flex-col h-full transition-colors duration-200"
+    >
+      <div className="flex justify-between items-center bg-muted p-3 rounded-t-md font-medium text-sm">
+        <span>{label}</span>
+        <Badge variant="outline">
+          {tasks.length}
+        </Badge>
+      </div>
+      <div className="flex-1 bg-muted/50 p-2 rounded-b-md min-h-[500px] overflow-y-auto">
+        <SortableContext
+          items={taskIds}
+          strategy={verticalListSortingStrategy}
+        >
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <SortableTaskCard
+                key={task.id}
+                task={task}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
+            ))}
+          </div>
+        </SortableContext>
+      </div>
+    </div>
+  );
+}
+
+export function KanbanBoard({ tasks: initialTasks, employees, projectId }: KanbanBoardProps) {
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [isUpdateDialogOpen, setIsUpdateDialogOpen] = useState(false);
@@ -81,20 +233,131 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
   const [newAssignee, setNewAssignee] = useState<string>("");
   const [isUpdating, setIsUpdating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [activeId, setActiveId] = useState<string | null>(null);
 
-  const openUpdateDialog = (task: Task) => {
+  // Memoize tasks by status to prevent unnecessary recalculations
+  const tasksByStatus = useMemo(() => {
+    return statusColumns.reduce((acc, column) => {
+      acc[column.status] = tasks.filter(task => task.status === column.status);
+      return acc;
+    }, {} as Record<TaskStatus, Task[]>);
+  }, [tasks]);
+
+  const sensors = useSensors(
+    useSensor(MouseSensor, {
+      activationConstraint: {
+        distance: 10,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 250,
+        tolerance: 5,
+      },
+    })
+  );
+
+  // Memoize handlers to prevent unnecessary re-renders
+  const openUpdateDialog = useCallback((task: Task) => {
     setSelectedTask(task);
     setNewStatus(task.status);
     setNewAssignee(task.assigneeId || "unassigned");
     setIsUpdateDialogOpen(true);
-  };
+  }, []);
 
-  const openDeleteDialog = (task: Task) => {
+  const openDeleteDialog = useCallback((task: Task) => {
     setSelectedTask(task);
     setIsDeleteDialogOpen(true);
-  };
+  }, []);
 
-  const handleUpdateTask = async () => {
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    setActiveId(event.active.id as string);
+  }, []);
+
+  const handleDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
+
+  // Fetch latest tasks from API
+  const fetchTasks = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/tasks?projectId=${projectId}`);
+      if (!res.ok) {
+        throw new Error('Failed to fetch tasks');
+      }
+      const data = await res.json();
+      setTasks(data.tasks);
+    } catch (error) {
+      console.error('Error fetching tasks:', error);
+      toast.error('Failed to fetch tasks');
+    }
+  }, [projectId]);
+
+  const handleDragEnd = useCallback(async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setActiveId(null);
+
+    if (!over) {
+      toast.error("Drop target not found");
+      return;
+    }
+
+    const activeTask = tasks.find((task) => task.id === active.id);
+    if (!activeTask) {
+      toast.error("Task not found");
+      return;
+    }
+
+    const targetColumnStatus = over.data.current?.type === 'column' ? over.id : null;
+    if (!targetColumnStatus) {
+      toast.error("Invalid drop target");
+      return;
+    }
+
+    const newStatus = targetColumnStatus as TaskStatus;
+    if (activeTask.status === newStatus) {
+      return;
+    }
+
+    // Optimistically update UI
+    setTasks((prevTasks) =>
+      prevTasks.map((task) =>
+        task.id === active.id ? { ...task, status: newStatus } : task
+      )
+    );
+
+    try {
+      const response = await fetch(`/api/tasks/${active.id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: newStatus,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || "Failed to update task status");
+      }
+
+      await fetchTasks();
+      toast.success("Task status updated");
+    } catch (error) {
+      // Revert on error
+      setTasks((prevTasks) =>
+        prevTasks.map((task) =>
+          task.id === active.id ? { ...task, status: activeTask.status } : task
+        )
+      );
+      const errorMessage = error instanceof Error ? error.message : "Failed to update task status";
+      toast.error(errorMessage);
+      console.error(error);
+    }
+  }, [tasks, fetchTasks]);
+
+  const handleUpdateTask = useCallback(async () => {
     if (!selectedTask) return;
     
     setIsUpdating(true);
@@ -118,15 +381,7 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
         throw new Error("Failed to update task");
       }
 
-      const { task: updatedTask } = await response.json();
-
-      // Update local state
-      setTasks((prevTasks) =>
-        prevTasks.map((task) =>
-          task.id === selectedTask.id ? updatedTask : task
-        )
-      );
-
+      await fetchTasks();
       setIsUpdateDialogOpen(false);
       toast.success("Task updated successfully");
     } catch (error) {
@@ -135,9 +390,9 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
     } finally {
       setIsUpdating(false);
     }
-  };
+  }, [selectedTask, newStatus, newAssignee, fetchTasks]);
 
-  const handleDeleteTask = async () => {
+  const handleDeleteTask = useCallback(async () => {
     if (!selectedTask) return;
     
     setIsDeleting(true);
@@ -151,11 +406,7 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
         throw new Error("Failed to delete task");
       }
 
-      // Update local state
-      setTasks((prevTasks) =>
-        prevTasks.filter((task) => task.id !== selectedTask.id)
-      );
-
+      await fetchTasks();
       setIsDeleteDialogOpen(false);
       toast.success("Task deleted successfully");
     } catch (error) {
@@ -164,84 +415,83 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, [selectedTask, fetchTasks]);
 
   return (
-    <div className="gap-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5">
-      {statusColumns.map((column) => (
-        <div key={column.status} className="flex flex-col h-full">
-          <div className="flex justify-between items-center bg-muted p-3 rounded-t-md font-medium text-sm">
-            <span>{column.label}</span>
-            <Badge variant="outline">
-              {tasks.filter((task) => task.status === column.status).length}
-            </Badge>
-          </div>
-          <div className="flex-1 bg-muted/50 p-2 rounded-b-md min-h-[500px] overflow-y-auto">
-            <div className="space-y-2">
-              {tasks
-                .filter((task) => task.status === column.status)
-                .map((task) => (
-                  <Card key={task.id} className="shadow-sm">
-                    <CardHeader className="p-3 pb-0">
-                      <div className="flex justify-between items-start">
-                        <CardTitle className="font-medium text-sm">
-                          {task.title}
-                        </CardTitle>
-                        <Badge className={priorityColors[task.priority]} variant="outline">
-                          {priorityIcons[task.priority]}
-                          <span className="ml-1">{task.priority}</span>
-                        </Badge>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="p-3 pt-2">
-                      {task.description && (
-                        <CardDescription className="mt-1 text-xs line-clamp-2">
-                          {task.description}
-                        </CardDescription>
-                      )}
-                    </CardContent>
-                    <CardFooter className="flex justify-between items-center p-3 pt-0">
-                      {task.assignee ? (
-                        <div className="flex items-center gap-2">
-                          <Avatar className="w-6 h-6">
-                            <AvatarFallback className="text-xs">
-                              {task.assignee.name.substring(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                          <span className="text-muted-foreground text-xs">
-                            {task.assignee.name}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">Unassigned</span>
-                      )}
-                      <div className="flex gap-1">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-7 h-7"
-                          onClick={() => openUpdateDialog(task)}
-                        >
-                          <Edit className="w-3.5 h-3.5" />
-                          <span className="sr-only">Edit</span>
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="w-7 h-7 text-destructive"
-                          onClick={() => openDeleteDialog(task)}
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                          <span className="sr-only">Delete</span>
-                        </Button>
-                      </div>
-                    </CardFooter>
-                  </Card>
-                ))}
-            </div>
-          </div>
-        </div>
-      ))}
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+    >
+      <div className="gap-4 grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5">
+        {statusColumns.map((column) => (
+          <KanbanColumn
+            key={column.status}
+            status={column.status}
+            label={column.label}
+            tasks={tasksByStatus[column.status] || []}
+            onEdit={openUpdateDialog}
+            onDelete={openDeleteDialog}
+          />
+        ))}
+      </div>
+
+      <DragOverlay>
+        {activeId ? (
+          <Card className="opacity-90 shadow-lg w-[300px]">
+            <CardHeader className="p-3 pb-0">
+              <div className="flex justify-between items-start">
+                <CardTitle className="font-medium text-sm">
+                  {tasks.find((task) => task.id === activeId)?.title}
+                </CardTitle>
+                <Badge
+                  className={
+                    priorityColors[
+                      tasks.find((task) => task.id === activeId)?.priority ||
+                        "LOW"
+                    ]
+                  }
+                  variant="outline"
+                >
+                  {priorityIcons[
+                    tasks.find((task) => task.id === activeId)?.priority || "LOW"
+                  ]}
+                  <span className="ml-1">
+                    {tasks.find((task) => task.id === activeId)?.priority}
+                  </span>
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="p-3 pt-2">
+              {tasks.find((task) => task.id === activeId)?.description && (
+                <CardDescription className="mt-1 text-xs line-clamp-2">
+                  {tasks.find((task) => task.id === activeId)?.description}
+                </CardDescription>
+              )}
+            </CardContent>
+            <CardFooter className="flex justify-between items-center p-3 pt-0">
+              {tasks.find((task) => task.id === activeId)?.assignee ? (
+                <div className="flex items-center gap-2">
+                  <Avatar className="w-6 h-6">
+                    <AvatarFallback className="text-xs">
+                      {tasks
+                        .find((task) => task.id === activeId)
+                        ?.assignee?.name.substring(0, 2)
+                        .toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-muted-foreground text-xs">
+                    {tasks.find((task) => task.id === activeId)?.assignee?.name}
+                  </span>
+                </div>
+              ) : (
+                <span className="text-muted-foreground text-xs">Unassigned</span>
+              )}
+            </CardFooter>
+          </Card>
+        ) : null}
+      </DragOverlay>
 
       {/* Update Task Dialog */}
       <Dialog open={isUpdateDialogOpen} onOpenChange={setIsUpdateDialogOpen}>
@@ -338,6 +588,6 @@ export function KanbanBoard({ tasks: initialTasks, employees }: KanbanBoardProps
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </DndContext>
   );
 }
